@@ -1,0 +1,14 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "fourpoints",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "/Users/michaelmcdaniel/Desktop/Fourpoint Group Website/scripts/serve.py",
+        "4173"
+      ],
+      "port": 4173
+    }
+  ]
+}
