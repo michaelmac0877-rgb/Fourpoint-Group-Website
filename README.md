@@ -68,14 +68,33 @@ into `assets/img/` — no code changes needed:
 ## Logo assets
 
 `scripts/prep_logo.py` generates every logo derivative from the original
-`four-points-group-alt-short-rules.png`. It cuts the white background in three
-passes: flood-fill from the border, clear the enclosed pockets (the two
-crescents inside the compass arcs, plus the counters in the wordmark), then
-choke the edge to remove the drop-shadow halo. A size floor on the second pass
-is what protects the white marble quadrant, which is veined enough that its
-near-white pixels never form a large blob.
+`four-points-group-alt-short-rules.png`. It cuts the white background in two
+passes — flood-fill from the border, then clear enclosed pockets above a size
+floor (the crescent inside a compass arc, plus the counters in the wordmark
+letters) — and feathers the edge once. The size floor is what protects the white
+marble quadrant, which is veined enough that its near-white pixels never form a
+large blob.
 
-Outputs: `logo-full.png`, `logo-mark.png` / `.webp` / `-220.png`, and favicons.
+Two parameters in there are load-bearing, and both are commented in the script:
+
+- **Never erode/choke the alpha.** An earlier version shaved 2px to chase the
+  last of the drop-shadow halo. The compass arcs are only ~30px thick at this
+  resolution, so that removed better than a fifth of them and left every edge
+  chewed — the mark visibly fell apart at nav size.
+- **Keep `THRESH` at 236.** At 228 an extra "pocket" is detected inside the
+  marble quadrant and punched straight through the artwork.
+
+Outputs: `logo-full.png`, `logo-mark.png` / `.webp`, `logo-mark-220.png`,
+`logo-mark-96.png`, and favicons. The pre-scaled marks exist because handing the
+browser a 220px file to paint at 42px is a 5× downscale that aliases the thin
+arcs into speckle — they are sized at roughly 2× their CSS display size instead.
+
+**Resolution ceiling:** the supplied logo is a 1254px raster, so the mark tops
+out at 674px native. The big parallax element is capped at that width to avoid
+upscaling, but on a retina screen it is still painted larger than its source. If
+you can get the original vector (`.ai`/`.eps`/`.svg`) from whoever made the
+logo, re-running this script against it would make the background mark
+noticeably crisper.
 
 ## Contact form
 

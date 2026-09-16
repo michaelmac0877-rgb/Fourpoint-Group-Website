@@ -3,21 +3,40 @@
 Prepare the Four Points Group logo for the web.
 
 The source logo ships on solid white with a soft drop shadow. Getting a clean
-cutout takes three passes, because a naive "white -> transparent" would punch
+cutout takes two passes, because a naive "white -> transparent" would punch
 holes straight through the white marble quadrant:
 
   1. Flood-fill inwards from the border to clear the outer background.
-  2. Clear *enclosed* near-white regions above a size floor -- the two crescents
-     trapped between the compass arcs and the diamond, plus the counters inside
-     the wordmark letters. The size floor is what protects the marble: marble is
+  2. Clear *enclosed* near-white regions above a size floor -- the crescent
+     trapped between a compass arc and the diamond, plus the counters inside the
+     wordmark letters. The size floor is what protects the marble: marble is
      heavily veined (luminance ranges the full 0-255), so its near-white pixels
      only ever form small scattered specks, never a large blob.
-  3. Choke the edge inwards a touch to eat the drop-shadow halo, then feather.
+
+Then feather the cut edge, once, and stop.
+
+Do NOT choke/erode the alpha to chase the last of the drop-shadow halo. An
+earlier revision eroded 2px and it visibly disfigured the mark: the compass arcs
+are only ~30px thick at this resolution, so 2px off each side removed better
+than a fifth of them and left every edge chewed. THRESH is low enough that the
+remaining fringe is negligible.
+
+The threshold is likewise not a free parameter. At 236 the six cleared pockets
+are the one crescent and five letter counters. Drop it to 228 and a seventh
+pocket appears at (648,342)-(698,455) -- inside the marble quadrant -- which
+punches a hole straight through the artwork.
 
 Outputs (assets/img/):
-  logo-full.png   full lockup, transparent
-  logo-mark.png   compass mark only, transparent, padded square
-  favicon-*.png   square mark at favicon sizes
+  logo-full.png      full lockup, transparent
+  logo-mark.png      compass mark only, transparent, padded square
+  logo-mark.webp     same, ~1/7th the weight, for the big parallax element
+  logo-mark-220.png  pre-scaled for the ~84px service-area compass
+  logo-mark-96.png   pre-scaled for the ~42px nav/footer lockups
+  favicon-*.png      square mark at favicon sizes
+
+The pre-scaled variants matter: handing the browser a 220px file to paint at
+42px is a 5x downscale and it aliases the thin arcs into speckle. Downsample
+properly here with LANCZOS instead.
 """
 
 from collections import deque
@@ -36,6 +55,9 @@ THRESH = 236
 # Enclosed white regions smaller than this are texture specks inside the stone
 # and must stay opaque; anything larger is genuine background showing through.
 MIN_HOLE = 400
+
+# Gaussian radius used to soften the cut edge. Applied exactly once.
+FEATHER = 0.5
 
 
 def near_white(px):
@@ -104,17 +126,6 @@ def cut_background(img):
     return alpha
 
 
-def finish(rgba, choke, feather=0.8):
-    """Choke the alpha inwards by `choke` px to kill the shadow halo."""
-    a = rgba.getchannel("A")
-    if choke:
-        a = a.filter(ImageFilter.MinFilter(choke * 2 + 1))
-    a = a.filter(ImageFilter.GaussianBlur(feather))
-    out = rgba.copy()
-    out.putalpha(a)
-    return out.crop(out.getbbox())
-
-
 def square(im):
     side = max(im.size)
     canvas = Image.new("RGBA", (side, side), (0, 0, 0, 0))
@@ -132,13 +143,16 @@ def main():
     print(f"source: {w}x{h}")
 
     alpha = cut_background(img)
+    # Soften the cut edge once, here. Everything downstream is a crop or a
+    # resize of this one buffer, so no region gets filtered twice.
+    alpha = alpha.filter(ImageFilter.GaussianBlur(FEATHER))
+
     rgba = img.convert("RGBA")
     rgba.putalpha(alpha)
 
     os.makedirs(OUT_DIR, exist_ok=True)
 
-    # Full lockup: the wordmark strokes are thin, so only a 1px choke.
-    full = finish(rgba, choke=1)
+    full = rgba.crop(rgba.getbbox())
     full.save(os.path.join(OUT_DIR, "logo-full.png"))
     print(f"logo-full.png: {full.size}")
 
@@ -168,16 +182,20 @@ def main():
     gutter = (lo + hi) // 2
     print(f"mark/wordmark gutter at y={gutter} of {fh} ({span}-row band)")
 
-    # Mark shapes are chunky, so one more choke pass is safe and tidies the edge.
-    mark = square(finish(full.crop((0, 0, fw, gutter)), choke=1))
+    # Plain crop -- the alpha was already feathered above, so no second filter.
+    mark_raw = full.crop((0, 0, fw, gutter))
+    mark = square(mark_raw.crop(mark_raw.getbbox()))
     mark.save(os.path.join(OUT_DIR, "logo-mark.png"), optimize=True)
-    # WebP for the big parallax element -- roughly a fifth of the PNG's weight.
+    # WebP for the big parallax element -- roughly a seventh of the PNG's weight.
     mark.save(os.path.join(OUT_DIR, "logo-mark.webp"), quality=88, method=6)
-    # Small raster for the nav and footer lockups.
-    mark.resize((220, 220), Image.LANCZOS).save(
-        os.path.join(OUT_DIR, "logo-mark-220.png"), optimize=True
-    )
-    print(f"logo-mark: {mark.size} (+ .webp, + 220px)")
+
+    # Pre-scaled lockup marks. Roughly 2x their CSS display size so retina is
+    # covered without asking the browser to do a large downscale itself.
+    for px in (220, 96):
+        mark.resize((px, px), Image.LANCZOS).save(
+            os.path.join(OUT_DIR, f"logo-mark-{px}.png"), optimize=True
+        )
+    print(f"logo-mark: {mark.size} (+ .webp, + 220px, + 96px)")
 
     for size in (32, 180, 512):
         ico = mark.resize((size, size), Image.LANCZOS)
