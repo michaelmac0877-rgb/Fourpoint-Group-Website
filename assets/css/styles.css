@@ -137,9 +137,10 @@ a { color: inherit; }
 }
 
 .logo-stage__pivot {
-  /* Capped at the mark's native 674px. The source logo is only 1254px square,
-     so painting it any larger just upscales and softens the artwork. */
-  width: min(76vmin, 674px);
+  /* Capped against the delivered mark (1400px WebP). At peak scroll scale
+     (~1.18x) on a 2x display this paints ~1.2x the source, versus 2.4x before
+     the artwork was re-mastered -- which is what made it look soft. */
+  width: min(78vmin, 720px);
   aspect-ratio: 1 / 1;
   transform-style: preserve-3d;
   /* Promoted to its own compositor layer; JS only ever writes `transform`. */

@@ -89,12 +89,29 @@ Outputs: `logo-full.png`, `logo-mark.png` / `.webp`, `logo-mark-220.png`,
 browser a 220px file to paint at 42px is a 5× downscale that aliases the thin
 arcs into speckle — they are sized at roughly 2× their CSS display size instead.
 
-**Resolution ceiling:** the supplied logo is a 1254px raster, so the mark tops
-out at 674px native. The big parallax element is capped at that width to avoid
-upscaling, but on a retina screen it is still painted larger than its source. If
-you can get the original vector (`.ai`/`.eps`/`.svg`) from whoever made the
-logo, re-running this script against it would make the background mark
-noticeably crisper.
+### Two masters, on purpose
+
+`assets/src/` holds both source files, and the script takes different parts from
+each:
+
+| File | Used for | Why |
+| --- | --- | --- |
+| `logo-group-1254.png` | The full lockup | It is the only file with the correct **GROUP** wordmark |
+| `logo-4k-mark-source.png` | The compass mark + favicons | 4096px, so the mark is 2193px native instead of 674px |
+
+The 4K file is a Higgsfield upscale of the Four Points **Flooring** logo. Its
+compass mark is pixel-identical to the Group file's — verified, every differing
+pixel between the two 1254px originals falls in the second wordmark line — so
+the mark can safely come from it while the lockup comes from the Group master.
+**Never build `logo-full.png` from the 4K source** or the site will read
+FLOORING. The script enforces the split; the sanity check in `split_mark()`
+will also refuse a crop that is not roughly square, which is what catches a
+mis-detected gutter dragging wordmark into the mark.
+
+The delivered mark is deliberately much smaller than the master: 1400px WebP
+(what every modern browser gets) and a 900px PNG fallback. A full-resolution PNG
+of this mark is over a megabyte, for an element that sits at 13% opacity behind
+the content.
 
 ## Contact form
 

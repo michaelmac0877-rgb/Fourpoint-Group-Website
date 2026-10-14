@@ -21,15 +21,27 @@ are only ~30px thick at this resolution, so 2px off each side removed better
 than a fifth of them and left every edge chewed. THRESH is low enough that the
 remaining fringe is negligible.
 
-The threshold is likewise not a free parameter. At 236 the six cleared pockets
-are the one crescent and five letter counters. Drop it to 228 and a seventh
-pocket appears at (648,342)-(698,455) -- inside the marble quadrant -- which
-punches a hole straight through the artwork.
+The threshold is likewise not a free parameter. At 236 the cleared pockets are
+the one crescent and the letter counters. Drop it to 228 and an extra pocket
+appears inside the marble quadrant, punching a hole through the artwork.
+
+TWO SOURCES, deliberately
+-------------------------
+assets/src/ holds both masters:
+
+  logo-group-1254.png       the real Four Points *Group* lockup, 1254px.
+  logo-4k-mark-source.png   a 4096px Higgsfield upscale, used for the mark only.
+
+The 4K file carries the Four Points *Flooring* wordmark, not Group -- but its
+compass mark is pixel-identical to the Group file's (verified: every differing
+pixel between the two 1254px originals falls in the second wordmark line). So we
+take the mark from the high-resolution file and the lockup from the Group file.
+Never build logo-full.png from the 4K source or the site will say FLOORING.
 
 Outputs (assets/img/):
-  logo-full.png      full lockup, transparent
-  logo-mark.png      compass mark only, transparent, padded square
-  logo-mark.webp     same, ~1/7th the weight, for the big parallax element
+  logo-full.png      full lockup, transparent          <- from the Group master
+  logo-mark.png      compass mark, transparent, square <- from the 4K master
+  logo-mark.webp     same, far lighter, for the big parallax element
   logo-mark-220.png  pre-scaled for the ~84px service-area compass
   logo-mark-96.png   pre-scaled for the ~42px nav/footer lockups
   favicon-*.png      square mark at favicon sizes
@@ -45,7 +57,9 @@ import sys
 
 from PIL import Image, ImageFilter
 
-SRC = os.path.expanduser("~/Downloads/four-points-group-alt-short-rules.png")
+SRC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "assets", "src")
+SRC_LOCKUP = os.path.join(SRC_DIR, "logo-group-1254.png")
+SRC_MARK = os.path.join(SRC_DIR, "logo-4k-mark-source.png")
 OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "assets", "img")
 
 # Near-white cutoff. Low enough to swallow the drop-shadow fringe, high enough
@@ -54,10 +68,26 @@ THRESH = 236
 
 # Enclosed white regions smaller than this are texture specks inside the stone
 # and must stay opaque; anything larger is genuine background showing through.
-MIN_HOLE = 400
+# Calibrated at 1254x1254 and scaled by area, since the two masters differ in
+# resolution by 3.3x -- a fixed pixel count would start eating marble speckle on
+# the 4K file.
+MIN_HOLE_AT_1254 = 400
+
+
+def min_hole_for(size):
+    w, h = size
+    return max(64, round(MIN_HOLE_AT_1254 * (w * h) / (1254 * 1254)))
 
 # Gaussian radius used to soften the cut edge. Applied exactly once.
 FEATHER = 0.5
+
+# Delivered size of the big parallax mark. WebP is what essentially every
+# browser actually gets, so it carries the resolution; the PNG is a fallback for
+# the rare client without WebP and is kept deliberately smaller, because a
+# full-size PNG of this mark is over a megabyte.
+DELIVER_WEBP_PX = 1400
+DELIVER_PNG_PX = 900
+WEBP_QUALITY = 84
 
 
 def near_white(px):
@@ -108,18 +138,27 @@ def cut_background(img):
                 keep[c] = 0
                 outer += 1
 
-    # Pass 2 -- enclosed pockets (arc crescents, letter counters).
-    holes = 0
+    # Pass 2 -- enclosed pockets (arc crescent, letter counters).
+    min_hole = min_hole_for(img.size)
+    pockets = []
     for i in range(n):
         if seen[i] or not near_white(data[i]):
             continue
         cells = flood(i)
-        if len(cells) >= MIN_HOLE:
+        if len(cells) >= min_hole:
+            xs = [c % w for c in cells]
+            ys = [c // w for c in cells]
+            pockets.append((len(cells), min(xs), min(ys), max(xs), max(ys)))
             for c in cells:
                 keep[c] = 0
-            holes += 1
 
-    print(f"  cleared {outer} outer px, {holes} enclosed pocket(s)")
+    print(f"  cleared {outer} outer px, {len(pockets)} pocket(s) "
+          f"(min_hole={min_hole})")
+    # Printed so a bad threshold is obvious: every pocket should sit either in
+    # the wordmark band or on the compass ring. One inside a stone quadrant
+    # means the cut is eating the artwork.
+    for area, x0, y0, x1, y1 in sorted(pockets, reverse=True):
+        print(f"    pocket {area:>7} px at ({x0},{y0})-({x1},{y1})")
 
     alpha = Image.new("L", (w, h))
     alpha.putdata([255 if k else 0 for k in keep])
@@ -133,36 +172,39 @@ def square(im):
     return canvas
 
 
-def main():
-    if not os.path.exists(SRC):
-        print(f"missing source logo: {SRC}", file=sys.stderr)
-        return 1
-
-    img = Image.open(SRC).convert("RGB")
-    w, h = img.size
-    print(f"source: {w}x{h}")
-
+def cutout(path):
+    """Load a master and return it as RGBA with the white background removed."""
+    img = Image.open(path).convert("RGB")
+    print(f"{os.path.basename(path)}: {img.size[0]}x{img.size[1]}")
     alpha = cut_background(img)
     # Soften the cut edge once, here. Everything downstream is a crop or a
     # resize of this one buffer, so no region gets filtered twice.
     alpha = alpha.filter(ImageFilter.GaussianBlur(FEATHER))
-
     rgba = img.convert("RGBA")
     rgba.putalpha(alpha)
+    return rgba.crop(rgba.getbbox())
 
-    os.makedirs(OUT_DIR, exist_ok=True)
 
-    full = rgba.crop(rgba.getbbox())
-    full.save(os.path.join(OUT_DIR, "logo-full.png"))
-    print(f"logo-full.png: {full.size}")
+def split_mark(lockup):
+    """Crop the compass mark off the top of a cleaned lockup.
 
-    # Split the mark off the wordmark. Measured on the cleaned lockup, the
-    # layout is three stacked blocks -- mark, "FOUR POINTS", "GROUP" -- divided
-    # by two equally wide empty bands, so we take the *earliest* widest band.
-    # (Measuring on the raw mask instead would find the thin light seam between
-    # the four quadrants and cut the mark in half.)
-    fw, fh = full.size
-    fa = list(full.getchannel("A").getdata())
+    The layout is three stacked blocks -- mark, "FOUR POINTS", and the second
+    wordmark line -- separated by empty bands. The mark is always the top block,
+    so we want the FIRST real band.
+
+    Two traps, both of which have bitten this function:
+
+      * The thin light seam between the four quadrants also reads as empty, so a
+        naive "first empty row" cuts the mark in half. Hence a minimum band
+        height -- scaled by resolution, because at 4096px that seam is 3x taller
+        than it was at 1254px and sails past a fixed 5px floor.
+      * The two wordmark bands are not always the same height, so "tallest band"
+        picks the gap between the two text lines on some masters and drags the
+        word FOUR POINTS into the mark. Hence "first band within 60% of the
+        tallest" rather than the tallest outright.
+    """
+    fw, fh = lockup.size
+    fa = list(lockup.getchannel("A").getdata())
     rows = [any(fa[y * fw + x] > 8 for x in range(fw)) for y in range(fh)]
 
     runs, start = [], None
@@ -172,22 +214,68 @@ def main():
         elif rows[y] and start is not None:
             runs.append((start, y, y - start))
             start = None
-    runs = [r for r in runs if r[2] >= 5]
+
+    min_span = max(5, round(5 * fw / 1254))
+    runs = [r for r in runs if r[2] >= min_span]
+    print(f"  bands (min {min_span}px): {[(r[0], r[2]) for r in runs]}")
     if not runs:
+        return None
+
+    widest = max(r[2] for r in runs)
+    lo, hi, span = next(r for r in runs if r[2] >= 0.6 * widest)
+    gutter = (lo + hi) // 2
+    print(f"  gutter at y={gutter} of {fh} ({span}-row band)")
+
+    raw = lockup.crop((0, 0, fw, gutter))
+    mark = raw.crop(raw.getbbox())
+
+    # The compass mark is square to within a few percent. Anything far off means
+    # we cut at the wrong band and have dragged wordmark into it.
+    ratio = mark.width / mark.height
+    if not 0.9 <= ratio <= 1.1:
+        print(f"!! mark is {mark.width}x{mark.height} (ratio {ratio:.2f}) -- "
+              f"wrong gutter, wordmark likely included", file=sys.stderr)
+        return None
+
+    return square(mark)
+
+
+def main():
+    for p in (SRC_LOCKUP, SRC_MARK):
+        if not os.path.exists(p):
+            print(f"missing source: {p}", file=sys.stderr)
+            return 1
+
+    os.makedirs(OUT_DIR, exist_ok=True)
+
+    # --- lockup, from the Group master (correct wordmark) ------------------
+    full = cutout(SRC_LOCKUP)
+    full.save(os.path.join(OUT_DIR, "logo-full.png"))
+    print(f"logo-full.png: {full.size}")
+
+    # --- mark, from the 4K master (same artwork, 3.3x the detail) ----------
+    hires = cutout(SRC_MARK)
+    mark = split_mark(hires)
+    if mark is None:
         print("!! could not separate mark from wordmark", file=sys.stderr)
         return 1
 
-    widest = max(r[2] for r in runs)
-    lo, hi, span = next(r for r in runs if r[2] == widest)
-    gutter = (lo + hi) // 2
-    print(f"mark/wordmark gutter at y={gutter} of {fh} ({span}-row band)")
+    # Ship the mark well below master resolution. The parallax element is capped
+    # in CSS and peaks near 1.18x scale, so ~1400px covers a 2x display; past
+    # that it is download weight for detail that sits at 13% opacity behind the
+    # content and cannot be seen.
+    def shrink(px):
+        return mark if mark.width <= px else mark.resize((px, px), Image.LANCZOS)
 
-    # Plain crop -- the alpha was already feathered above, so no second filter.
-    mark_raw = full.crop((0, 0, fw, gutter))
-    mark = square(mark_raw.crop(mark_raw.getbbox()))
-    mark.save(os.path.join(OUT_DIR, "logo-mark.png"), optimize=True)
-    # WebP for the big parallax element -- roughly a seventh of the PNG's weight.
-    mark.save(os.path.join(OUT_DIR, "logo-mark.webp"), quality=88, method=6)
+    shrink(DELIVER_WEBP_PX).save(
+        os.path.join(OUT_DIR, "logo-mark.webp"),
+        quality=WEBP_QUALITY, method=6,
+    )
+    shrink(DELIVER_PNG_PX).save(
+        os.path.join(OUT_DIR, "logo-mark.png"), optimize=True
+    )
+    print(f"  master {mark.size[0]}px -> webp {DELIVER_WEBP_PX}px, "
+          f"png {DELIVER_PNG_PX}px")
 
     # Pre-scaled lockup marks. Roughly 2x their CSS display size so retina is
     # covered without asking the browser to do a large downscale itself.
