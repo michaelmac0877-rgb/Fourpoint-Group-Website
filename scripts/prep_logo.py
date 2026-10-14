@@ -85,7 +85,8 @@ FEATHER = 0.5
 # browser actually gets, so it carries the resolution; the PNG is a fallback for
 # the rare client without WebP and is kept deliberately smaller, because a
 # full-size PNG of this mark is over a megabyte.
-DELIVER_WEBP_PX = 1400
+# 850 CSS px (the pivot's max width) x 2 for a retina display = 1700 device px.
+DELIVER_WEBP_PX = 1700
 DELIVER_PNG_PX = 900
 WEBP_QUALITY = 84
 

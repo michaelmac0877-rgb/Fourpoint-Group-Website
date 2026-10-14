@@ -46,6 +46,28 @@ The mark rotates mainly on the Z axis. A full `rotateY` sweep would turn the
 flat image edge-on — and briefly invisible — every 90°; spinning a compass in
 plane reads as intentional and never disappears.
 
+### Never scale the mark above 1
+
+`will-change: transform` promotes the pivot to its own compositor layer, and a
+composited layer is **rastered once, at its layout size**. Scaling it past 1
+does not re-raster — it stretches that cached bitmap, so the artwork visibly
+degrades part-way through the rotation while looking fine at rest. This shipped
+once and is exactly what "the background loses quality when it turns" meant.
+
+So the pivot's CSS box is sized to the *largest* the mark is ever painted, and
+`--logo-scale-min` (0.85) scales it down from there. One variable drives three
+things that must agree:
+
+- `.logo-stage__pivot` width — sized so `--logo-scale-min` reproduces the
+  intended on-screen size (`width ÷ scale-min` = the old width).
+- `@keyframes drift` — pins the mobile tier at the minimum so it matches.
+- `main.js` — reads the variable back and ramps scale from it up to exactly 1.
+
+If you change the mark's size, change the variable, not the multiplier in the
+script. And don't add a `filter` to `.logo-stage__mark`: a filter forces its own
+rasterised pass that the 3D transform then resamples again, compounding the
+same problem.
+
 ## Replacing the photography
 
 **The photos are placeholders.** They are stock images standing in until Four

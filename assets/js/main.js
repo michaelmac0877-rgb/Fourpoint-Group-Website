@@ -59,10 +59,18 @@
   var maxScroll = 1;
   var ticking = false;
 
+  // Smallest scale the mark is drawn at, reached at the top of the page; it
+  // grows to exactly 1 at the bottom. Read from CSS so --logo-scale-min stays
+  // the single source of truth across the pivot's width, the mobile drift
+  // keyframes, and this loop.
+  var SCALE_MIN = parseFloat(
+    getComputedStyle(docEl).getPropertyValue("--logo-scale-min")
+  ) || 0.85;
+
   // Smoothed rotation values. Lerping toward the target stops the mark from
   // snapping when the user flicks a trackpad or jumps with an anchor link.
-  var cur = { x: 0, y: 0, z: 0, s: 1 };
-  var tgt = { x: 0, y: 0, z: 0, s: 1 };
+  var cur = { x: 0, y: 0, z: 0, s: SCALE_MIN };
+  var tgt = { x: 0, y: 0, z: 0, s: SCALE_MIN };
   var primed = false;
 
   function measure() {
@@ -80,7 +88,11 @@
     tgt.z = p * 400;
     tgt.y = -38 + p * 76;
     tgt.x = 16 - p * 34;
-    tgt.s = 1 + p * 0.18;
+    // Scale UP TO 1 and never past it. The pivot is laid out at its largest
+    // painted size in CSS, so this only ever minifies the compositor layer's
+    // bitmap. Going above 1 stretches a bitmap that was rastered at layout size
+    // and the mark visibly falls apart mid-rotation. See .logo-stage__pivot.
+    tgt.s = SCALE_MIN + p * (1 - SCALE_MIN);
   }
 
   function lerp(a, b, t) { return a + (b - a) * t; }
